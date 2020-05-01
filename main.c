@@ -30,14 +30,44 @@ typedef struct{
 	pid_t pid;
 }process;
 
+typedef struct{
+	int data[256];
+	int head, tail;
+}queue;
+
 process *proc;
 char S[5];
 int N, policy;
 int running = -1, time = 0, finished = 0, last_time;
+queue Q;
 
 int cmp(const void *a, const void *b)
 {
 	return ((process*)a)->ready_time - ((process*)b)->ready_time;
+}
+
+void initqueue(queue *q)
+{
+	q->head = 0;
+	q->tail = 0;
+	return;
+}
+
+void enqueue(queue *q, int x)
+{
+	q->data[q->tail] = x;
+	q->tail = (q->tail + 1) % 256;
+	return;
+}
+
+int dequeue(queue *q)
+{
+	if(q->head == q->tail){
+		return -1;
+	}
+	int ret = q->data[q->head];
+	q->head = (q->head + 1) % 256;
+	return ret;
 }
 
 void assign_cpu(pid_t pid, int cpu)
@@ -51,10 +81,12 @@ void assign_cpu(pid_t pid, int cpu)
 		exit(1);
 	}
 }
+
 int runnable(int index)
 {
 	return (proc[index].pid > 0) && (proc[index].exec_time > 0);
 }
+
 int select_next()
 {
 	//non-preemptive
@@ -62,24 +94,15 @@ int select_next()
 		return running;
 	
 	if(policy == FIFO){
-		for(int i = 0; i < N; i++){
-			if(runnable(i))
-				return i;
-		}
+		return dequeue(&Q);
 	}
 	else if(policy == RR){
-		if(running == -1){
-			for(int i = 0; i < N; i++){
-				if(runnable(i))
-					return i;
-			}
-		}
+		if(running == -1)
+			return dequeue(&Q);
 		else{
 			if((time - last_time) % TIME_Q == 0){
-				for(int i = 1; i <= N; i++){
-					if(runnable((i + running) % N))
-						return (i + running) % N;
-				}
+				enqueue(&Q, running);
+				return dequeue(&Q);
 			}
 			else
 				return running;
@@ -134,9 +157,8 @@ int exec_proc(int index)
 		
 		int n = proc[index].exec_time;
 		for(int j = 0; j < n; j++){
-			//if(j % 100 == 0)
-				/*printf("%s: %d/%d\n", proc[index].name, j, n);
-				fflush(stdout);*/
+			/*if(j % 100 == 0)
+				printf("%s: %d/%d\n", proc[index].name, j, n);*/
 			one_unit();
 		}
 		
@@ -185,6 +207,9 @@ void scheduler()
 	
 	int med_proc = create_med_prio_proc();
 	
+	if(policy == FIFO || policy == RR)
+		initqueue(&Q);
+	
 	int next;
 	while(1){
 		if(running != -1 && proc[running].exec_time == 0){
@@ -202,6 +227,9 @@ void scheduler()
 				
 				fprintf(stdout, "%s %d\n", proc[i].name, proc[i].pid);
 				fflush(stdout);
+				if(policy == FIFO || policy == RR){
+					enqueue(&Q, i);
+				}
 				//fprintf(stderr, "%s ready at time %d\n", proc[i].name, time);
 			}
 		}
